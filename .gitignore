@@ -1,0 +1,45 @@
+# Python environment and dependencies
+.venv/
+venv/
+ENV/
+env/
+
+# Package managers and locks
+# (We keep uv.lock committed to track precise dependencies, but ignore local tool directories)
+.pdm-plugins/
+.pdm-build/
+
+# Python caching and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+doc/_build/
+target/
+
+# Testing and Coverage artifacts
+.pytest_cache/
+.htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+htmlcov/
+
+# Local configuration and secret keys
+.env
+*.local
+! .env.example
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs and text editors
+.vscode/
+.idea/
+*.swp
+*.swo

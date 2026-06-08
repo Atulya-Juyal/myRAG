@@ -1,0 +1,3 @@
+1. switch to redis for caching
+2. switch to prometheus for metrics collection
+3. setup openclaw for gemini api key rotation
