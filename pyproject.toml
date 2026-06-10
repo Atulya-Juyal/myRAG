@@ -22,6 +22,7 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "pgvector>=0.2.5",
     "langchain-community>=0.4.2",
+    "langchain-experimental>=0.4.2",
 ]
 
 [dependency-groups]
