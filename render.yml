@@ -18,7 +18,7 @@ services:
       - key: RATE_LIMIT
         value: "20/minute"
       - key: CACHE_TTL_SECONDS
-      value: "300"
+        value: "300"
       - key: MAX_RETRIES
         value: "3"
       - key: PRIMARY_MODEL

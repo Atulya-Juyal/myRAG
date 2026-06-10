@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     gemini_api_key: str
     primary_llm: str = "gemini-2.5-flash"
     fallback_llm: str = "gemini-2.5-flash"
+    jina_api_key: str | None = None
+    hf_token: str | None = None
+
+    #database configuration
+    database_url: str
 
     #langsmith configuration
     langchain_tracing_v2: bool = True

@@ -14,10 +14,13 @@ Wires together:
 
 import time
 import os
+import asyncio
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -33,6 +36,7 @@ from app.security import SecurityPipeline
 from app.cache import ResponseCache
 from app.monitoring import get_logger, MetricsCollector, RequestTimer
 from app.agent import ProductionAgent
+from app.rag import RAGManager
 
 load_dotenv()
 logger = get_logger()
@@ -44,7 +48,7 @@ async def lifespan(app: FastAPI):
     Initialize all components on startup, clean up on shutdown.
     This is the modern FastAPI pattern (replaces @app.on_event).
     """
-    global security, cache, metrics, agent
+    global security, cache, metrics, agent, rag_manager
 
     settings = get_settings()
 
@@ -59,6 +63,18 @@ async def lifespan(app: FastAPI):
     cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
     metrics = MetricsCollector()
     agent = ProductionAgent()
+    rag_manager = RAGManager()
+
+    # Seed default workspace if empty
+    try:
+        # Check if workspaces table/registry is empty
+        chats = rag_manager.load_chats()
+        if not chats:
+            logger.info("No workspaces found. Creating default 'New Chat' workspace...")
+            chat_id = str(uuid.uuid4())
+            rag_manager.create_chat(chat_id, "New Chat")
+    except Exception as e:
+        logger.error(f"Failed to seed default workspace: {e}")
 
     logger.info("All components initialized. Ready to serve requests.")
 
@@ -76,7 +92,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Production LangGraph API",
     description="A production-ready chat API with security, caching, and observability.",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 app.state.limiter = limiter
@@ -114,7 +130,9 @@ async def chat(request: Request, body: ChatRequest):
         security_notes = []
 
         # ---- Step 1: Security Check ----
+        print("API: Starting security check...", flush=True)
         is_allowed, cleaned_message, notes = security.check_input(body.message)
+        print(f"API: Security check complete. allowed={is_allowed}", flush=True)
         security_notes.extend(notes)
 
         if not is_allowed:
@@ -129,23 +147,35 @@ async def chat(request: Request, body: ChatRequest):
             )
 
         # ---- Step 2: Cache Lookup ----
+        print("API: Starting cache lookup...", flush=True)
         cached_response = cache.get(cleaned_message)
+        print(f"API: Cache lookup complete. hit={cached_response is not None}", flush=True)
         if cached_response is not None:
             metrics.record_request(latency_ms=0, cache_hit=True)
             logger.info("Cache hit", extra={"extra_data": {
                 "thread_id": body.thread_id,
             }})
+            # Save to history
+            try:
+                rag_manager.add_message_to_history(body.chat_id, "user", cleaned_message)
+                rag_manager.add_message_to_history(body.chat_id, "bot", cached_response, sources=[])
+            except Exception as e:
+                logger.error(f"Failed to save cache hit to history: {e}")
+
             return ChatResponse(
                 response=cached_response,
                 thread_id=body.thread_id,
                 model_used="cache",
                 cached=True,
                 processing_time_ms=0,
+                sources=[],
             )
 
         # ---- Step 3: Invoke LangGraph Agent ----
+        print("API: Starting agent invoke...", flush=True)
         try:
-            result = agent.invoke(cleaned_message)
+            result = agent.invoke(cleaned_message, chat_id=body.chat_id)
+            print("API: Agent invoke complete.", flush=True)
         except Exception as e:
             logger.error(f"Agent invocation failed: {e}", extra={"extra_data": {
                 "thread_id": body.thread_id,
@@ -190,12 +220,25 @@ async def chat(request: Request, body: ChatRequest):
             "latency_ms": round(timer.elapsed_ms, 2),
         }})
 
+        # ---- Step 7: Save to History ----
+        try:
+            rag_manager.add_message_to_history(body.chat_id, "user", cleaned_message)
+            rag_manager.add_message_to_history(
+                body.chat_id,
+                "bot",
+                validated_response,
+                sources=result.get("sources", [])
+            )
+        except Exception as e:
+            logger.error(f"Failed to save message to history: {e}")
+
         return ChatResponse(
             response=validated_response,
             thread_id=body.thread_id,
             model_used=model_used,
             cached=False,
             processing_time_ms=round(timer.elapsed_ms, 2),
+            sources=result.get("sources", []),
         )
 
 
@@ -239,6 +282,86 @@ async def cache_stats():
     Cache performance statistics.
     """
     return cache.stats
+
+
+# ==========================================
+# RAG Workspaces & Documents Endpoints
+# ==========================================
+
+from pydantic import BaseModel
+
+class CreateChatBody(BaseModel):
+    title: str
+
+@app.get("/chats")
+async def list_chats():
+    return rag_manager.load_chats()
+
+@app.post("/chats")
+async def create_chat(body: CreateChatBody):
+    chat_id = str(uuid.uuid4())
+    return rag_manager.create_chat(chat_id, body.title)
+
+@app.delete("/chats/{chat_id}")
+async def delete_chat(chat_id: str):
+    rag_manager.delete_chat(chat_id)
+    return {"status": "deleted"}
+
+class RenameChatBody(BaseModel):
+    title: str
+
+@app.put("/chats/{chat_id}")
+async def rename_chat(chat_id: str, body: RenameChatBody):
+    rag_manager.rename_chat(chat_id, body.title)
+    return {"status": "renamed", "title": body.title}
+
+@app.get("/chats/{chat_id}/history")
+async def get_chat_history(chat_id: str):
+    return rag_manager.load_history(chat_id)
+
+@app.post("/documents/upload")
+async def upload_document(
+    background_tasks: BackgroundTasks,
+    chat_id: str,
+    file: UploadFile = File(...)
+):
+    if not (file.filename.lower().endswith(".pdf") or 
+            file.filename.lower().endswith(".txt") or 
+            file.filename.lower().endswith(".md")):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF, TXT, or MD documents are supported."
+        )
+        
+    doc_id = str(uuid.uuid4())
+    file_bytes = await file.read()
+    
+    background_tasks.add_task(
+        rag_manager.process_document_background,
+        chat_id=chat_id,
+        file_content=file_bytes,
+        filename=file.filename,
+        doc_id=doc_id
+    )
+    return {"status": "Processing: Uploaded", "doc_id": doc_id}
+
+@app.get("/documents")
+async def list_documents(chat_id: str):
+    docs = rag_manager.load_documents(chat_id)
+    return list(docs.values())
+
+@app.delete("/documents/{chat_id}/{doc_id}")
+async def delete_document(chat_id: str, doc_id: str):
+    rag_manager.delete_document(chat_id, doc_id)
+    return {"status": "deleted"}
+
+# Ensure static folder exists
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")
 
 
 

@@ -19,6 +19,10 @@ class ChatRequest(BaseModel):
         default="default",
         description="Unique identifier for the conversation thread"
     )
+    chat_id: str = Field(
+        default="default",
+        description="Unique identifier for the chat workspace"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -28,6 +32,7 @@ class ChatResponse(BaseModel):
     model_used: str
     cached: bool = False
     processing_time_ms: float
+    sources: list[dict] = []
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

@@ -43,3 +43,12 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Runtime and workspace local storage
+data/
+
+# Exploratory scratch scripts
+scratch/
+
+# Temporary files
+test.json
