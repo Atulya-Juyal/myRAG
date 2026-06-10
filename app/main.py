@@ -92,7 +92,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Production LangGraph API",
     description="A production-ready chat API with security, caching, and observability.",
-    version="1.1.0",
+    version="1.1.1",
     lifespan=lifespan,
 )
 app.state.limiter = limiter
