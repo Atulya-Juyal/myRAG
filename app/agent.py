@@ -39,6 +39,13 @@ class ProductionAgent:
     def __init__(self):
         settings = get_settings()
 
+        # Build client options if custom API endpoint is configured
+        client_options = {}
+        transport = None
+        if settings.gemini_api_endpoint:
+            client_options["api_endpoint"] = settings.gemini_api_endpoint
+            transport = "rest"
+
         # Initialize the primary Gemini model
         self.primary_llm = ChatGoogleGenerativeAI(
             model=settings.primary_llm,
@@ -46,6 +53,8 @@ class ProductionAgent:
             timeout=30,
             max_retries=0,  # We handle retries ourselves via graph routing
             api_key=settings.gemini_api_key,
+            client_options=client_options if client_options else None,
+            transport=transport
         )
 
         # Initialize the fallback Gemini model
@@ -55,6 +64,8 @@ class ProductionAgent:
             timeout=30,
             max_retries=0,
             api_key=settings.gemini_api_key,
+            client_options=client_options if client_options else None,
+            transport=transport
         )
 
         self.max_retries = settings.max_retries

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     fallback_llm: str = "gemini-2.5-flash"
     jina_api_key: str | None = None
     hf_token: str | None = None
+    gemini_api_endpoint: str | None = None
+    render_ping_url: str | None = None
 
     #database configuration
     database_url: str

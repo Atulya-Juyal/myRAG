@@ -42,6 +42,50 @@ load_dotenv()
 logger = get_logger()
 
 
+async def render_keep_alive_pinger():
+    """
+    Background task to periodically ping the Render URL using standard urllib to keep the instance active.
+    """
+    import urllib.request
+    # Wait 60 seconds before first ping to allow server to fully start
+    await asyncio.sleep(60)
+    
+    settings = get_settings()
+    target_url = settings.render_ping_url or os.getenv("RENDER_PING_URL", "https://myrag-atulyajuyal.onrender.com")
+    
+    if not target_url:
+        logger.info("Keep-alive pinger disabled: RENDER_PING_URL not specified.")
+        return
+        
+    if not target_url.endswith("/health") and not target_url.endswith("/"):
+        ping_url = f"{target_url}/health"
+    elif target_url.endswith("/"):
+        ping_url = f"{target_url}health"
+    else:
+        ping_url = target_url
+
+    logger.info(f"Starting Render keep-alive pinger for: {ping_url}")
+    
+    while True:
+        try:
+            # Execute the synchronous urllib call in a worker thread to keep the event loop non-blocking
+            def do_ping():
+                req = urllib.request.Request(
+                    ping_url, 
+                    headers={'User-Agent': 'myRAG-KeepAlivePinger/1.0'}
+                )
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.getcode()
+                    
+            status_code = await asyncio.to_thread(do_ping)
+            logger.info(f"Keep-alive ping to {ping_url}: status={status_code}")
+        except Exception as e:
+            logger.warning(f"Keep-alive ping failed to reach {ping_url}: {e}")
+        
+        # Ping every 10 minutes (600 seconds) to prevent Render free-tier spin down
+        await asyncio.sleep(600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -78,10 +122,18 @@ async def lifespan(app: FastAPI):
 
     logger.info("All components initialized. Ready to serve requests.")
 
+    # Spawn the keep-alive pinger task
+    pinger_future = asyncio.create_task(render_keep_alive_pinger())
+
     yield  # App is running
 
     # Shutdown
     logger.info("Shutting down...", extra={"extra_data": metrics.summary})
+    pinger_future.cancel()
+    try:
+        await pinger_future
+    except asyncio.CancelledError:
+        pass
 
 
 
@@ -92,7 +144,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Production LangGraph API",
     description="A production-ready chat API with security, caching, and observability.",
-    version="1.1.3",
+    version="1.1.4",
     lifespan=lifespan,
 )
 app.state.limiter = limiter
