@@ -67,7 +67,8 @@ function setupEventListeners() {
     // Chat Send Triggers
     dom.btnSend.addEventListener('click', handleSendMessage);
     dom.chatInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        const isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13;
+        if (isEnter && !e.shiftKey) {
             e.preventDefault();
             handleSendMessage();
         }
@@ -439,7 +440,7 @@ async function handleSendMessage() {
     appendTypingPlaceholder(typingId);
 
     try {
-        const res = await fetch('/chat', {
+        const res = await fetch('/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -449,21 +450,9 @@ async function handleSendMessage() {
             })
         });
 
-        // Remove typing indicator
-        const typingEl = document.getElementById(typingId);
-        if (typingEl) typingEl.remove();
-
-        if (res.ok) {
-            const data = await res.json();
-            const botMsg = { 
-                sender: 'bot', 
-                text: data.response, 
-                sources: data.sources || [], 
-                timestamp: data.timestamp || new Date().toISOString()
-            };
-            state.localHistory[state.activeWorkspaceId].push(botMsg);
-            appendMessage('bot', data.response, data.sources);
-        } else {
+        if (!res.ok) {
+            const typingEl = document.getElementById(typingId);
+            if (typingEl) typingEl.remove();
             const errData = await res.json();
             const botErrorMsg = {
                 sender: 'bot',
@@ -473,7 +462,133 @@ async function handleSendMessage() {
             };
             state.localHistory[state.activeWorkspaceId].push(botErrorMsg);
             appendMessage('bot', botErrorMsg.text);
+            return;
         }
+
+        // Active streaming placeholders & progressive typing variables
+        const activeMessageId = 'stream-' + Date.now();
+        let hasCreatedBubble = false;
+        let targetContent = '';
+        let displayedContent = '';
+        let typingTimer = null;
+        let isStreamDone = false;
+        let sources = [];
+        let modelUsed = 'primary';
+
+        const typeNext = () => {
+            if (displayedContent.length < targetContent.length) {
+                const remaining = targetContent.length - displayedContent.length;
+                let step = 1;
+                // Catch up dynamically if we are far behind due to large buffered chunks
+                if (remaining > 300) step = 15;
+                else if (remaining > 100) step = 8;
+                else if (remaining > 30) step = 4;
+                else if (remaining > 10) step = 2;
+
+                displayedContent += targetContent.substr(displayedContent.length, step);
+                updateStreamingBubble(activeMessageId, displayedContent);
+                typingTimer = setTimeout(typeNext, 15);
+            } else {
+                typingTimer = null;
+                if (isStreamDone) {
+                    finalizeStreamingMessage(activeMessageId, targetContent, sources);
+                    const botMsg = { 
+                        sender: 'bot', 
+                        text: targetContent, 
+                        sources: sources, 
+                        timestamp: new Date().toISOString()
+                    };
+                    state.localHistory[state.activeWorkspaceId].push(botMsg);
+                }
+            }
+        };
+
+        const processToken = (token) => {
+            targetContent += token;
+            if (!hasCreatedBubble) {
+                const typingEl = document.getElementById(typingId);
+                if (typingEl) typingEl.remove();
+                appendStreamingPlaceholder(activeMessageId);
+                hasCreatedBubble = true;
+            }
+            if (!typingTimer) {
+                typeNext();
+            }
+        };
+
+        // Read the streaming response body
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep partial last line in buffer
+
+            for (const line of lines) {
+                const cleanLine = line.trim();
+                if (!cleanLine.startsWith('data:')) continue;
+
+                try {
+                    const payloadStr = cleanLine.substring(5).trim();
+                    const data = JSON.parse(payloadStr);
+
+                    if (data.type === 'token') {
+                        processToken(data.content);
+                    } else if (data.type === 'done') {
+                        sources = data.sources || [];
+                        modelUsed = data.model_used || 'primary';
+                    }
+                } catch (e) {
+                    console.error('Failed to parse SSE line:', cleanLine, e);
+                }
+            }
+        }
+
+        // Process remaining buffer
+        if (buffer && buffer.trim().startsWith('data:')) {
+            try {
+                const payloadStr = buffer.trim().substring(5).trim();
+                const data = JSON.parse(payloadStr);
+                if (data.type === 'token') {
+                    processToken(data.content);
+                } else if (data.type === 'done') {
+                    sources = data.sources || [];
+                    modelUsed = data.model_used || 'primary';
+                }
+            } catch (e) {
+                console.warn('Final buffer parse failed:', e);
+            }
+        }
+
+        isStreamDone = true;
+        
+        // If typing has already caught up, finalize it immediately
+        if (displayedContent.length === targetContent.length) {
+            const typingEl = document.getElementById(typingId);
+            if (typingEl) typingEl.remove();
+            
+            // Ensure bubble is created even if no tokens were yielded
+            if (!hasCreatedBubble) {
+                appendStreamingPlaceholder(activeMessageId);
+                hasCreatedBubble = true;
+            }
+            
+            finalizeStreamingMessage(activeMessageId, targetContent, sources);
+            
+            const botMsg = { 
+                sender: 'bot', 
+                text: targetContent, 
+                sources: sources, 
+                timestamp: new Date().toISOString()
+            };
+            state.localHistory[state.activeWorkspaceId].push(botMsg);
+        }
+
     } catch (err) {
         console.error('Chat endpoint failed:', err);
         const typingEl = document.getElementById(typingId);
@@ -481,7 +596,7 @@ async function handleSendMessage() {
 
         const botErrorMsg = {
             sender: 'bot',
-            text: '⚠️ Network connection lost. Could not communicate with server.',
+            text: '⚠️ Network connection lost or interrupted.',
             sources: [],
             timestamp: new Date().toISOString()
         };
@@ -724,14 +839,290 @@ function appendTypingPlaceholder(id) {
 // ----------------------------------------------------
 
 function parseMessageText(text) {
-    let escaped = escapeHTML(text);
-    // Replace newlines with line breaks
-    escaped = escaped.replace(/\n/g, '<br>');
-    // Bold pattern (**text**)
-    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Code blocks (`code`)
-    escaped = escaped.replace(/`(.*?)`/g, '<code style="background: rgba(15,23,42,0.06); padding: 2px 4px; border-radius: 4px; font-family: monospace;">$1</code>');
-    return escaped;
+    if (!text) return '';
+    
+    const lines = text.split('\n');
+    let html = '';
+    
+    let inCodeBlock = false;
+    let codeContent = [];
+    let codeLang = '';
+    
+    let inList = false;
+    let listType = ''; // 'ul' or 'ol'
+    
+    const inlineParse = (str) => {
+        // Bold (**text**)
+        str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        // Italic (*text*)
+        str = str.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        // Inline code (`code`)
+        str = str.replace(/`(.*?)`/g, '<code class="inline-code">$1</code>');
+        return str;
+    };
+    
+    const closeList = () => {
+        if (inList) {
+            html += `</${listType}>`;
+            inList = false;
+            listType = '';
+        }
+    };
+    
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        
+        // Handle fenced code blocks
+        if (line.trim().startsWith('```')) {
+            if (inCodeBlock) {
+                // Close code block
+                inCodeBlock = false;
+                const codeEscaped = escapeHTML(codeContent.join('\n'));
+                const blockId = 'code-' + Math.random().toString(36).substr(2, 9);
+                html += `
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">${escapeHTML(codeLang || 'code')}</span>
+                            <button class="btn-copy-code" onclick="copyToClipboard('${blockId}')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H3.75m3.75 9H3.75m12 0h.008v.008h-.008v-.008z" />
+                                </svg>
+                                <span>Copy</span>
+                            </button>
+                        </div>
+                        <pre><code id="${blockId}">${codeEscaped}</code></pre>
+                    </div>
+                `;
+                codeContent = [];
+                codeLang = '';
+            } else {
+                // Open code block
+                closeList();
+                inCodeBlock = true;
+                codeLang = line.trim().substring(3).trim();
+            }
+            continue;
+        }
+        
+        if (inCodeBlock) {
+            codeContent.push(line);
+            continue;
+        }
+        
+        // Handle Horizontal Rules
+        if (line.trim() === '---' || line.trim() === '***') {
+            closeList();
+            html += '<hr>';
+            continue;
+        }
+        
+        // Handle Headings (H1 to H4)
+        const headingMatch = line.match(/^(#{1,4})\s+(.*)$/);
+        if (headingMatch) {
+            closeList();
+            const level = headingMatch[1].length;
+            const content = inlineParse(escapeHTML(headingMatch[2]));
+            html += `<h${level}>${content}</h${level}>`;
+            continue;
+        }
+        
+        // Handle Unordered Lists (- or *)
+        const ulMatch = line.match(/^(\s*)([-*])\s+(.*)$/);
+        if (ulMatch) {
+            const content = inlineParse(escapeHTML(ulMatch[3]));
+            if (!inList || listType !== 'ul') {
+                closeList();
+                html += '<ul>';
+                inList = true;
+                listType = 'ul';
+            }
+            html += `<li>${content}</li>`;
+            continue;
+        }
+        
+        // Handle Ordered Lists (1. item)
+        const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+        if (olMatch) {
+            const content = inlineParse(escapeHTML(olMatch[3]));
+            if (!inList || listType !== 'ol') {
+                closeList();
+                html += '<ol>';
+                inList = true;
+                listType = 'ol';
+            }
+            html += `<li>${content}</li>`;
+            continue;
+        }
+        
+        // Handle empty lines (paragraph separations)
+        if (line.trim() === '') {
+            closeList();
+            continue;
+        }
+        
+        // Standard body line
+        closeList();
+        const inlineContent = inlineParse(escapeHTML(line));
+        html += `<p>${inlineContent}</p>`;
+    }
+    
+    closeList();
+    return html;
+}
+
+function copyToClipboard(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    
+    const text = el.innerText || el.textContent;
+    
+    const onSuccess = () => {
+        const btn = el.closest('.code-block-wrapper').querySelector('.btn-copy-code');
+        if (btn) {
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;color:var(--color-success);">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span style="color:var(--color-success);">Copied!</span>
+            `;
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+            }, 2000);
+        }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(err => {
+            console.warn('navigator.clipboard failed, trying fallback:', err);
+            fallbackCopyToClipboard(text, onSuccess);
+        });
+    } else {
+        fallbackCopyToClipboard(text, onSuccess);
+    }
+}
+
+function fallbackCopyToClipboard(text, onSuccess) {
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        // Prevent scrolling to bottom
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (successful) {
+            onSuccess();
+        } else {
+            console.error('Fallback copy command was unsuccessful');
+        }
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+    }
+}
+
+function appendStreamingPlaceholder(id) {
+    const row = document.createElement('div');
+    row.className = 'message-row bot';
+    row.id = id;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble streaming';
+
+    bubble.innerHTML = `
+        <div class="message-content"><span class="streaming-cursor"></span></div>
+    `;
+
+    row.appendChild(bubble);
+    dom.chatMessages.appendChild(row);
+    scrollToBottom();
+    return bubble;
+}
+
+function updateStreamingBubble(id, content) {
+    const row = document.getElementById(id);
+    if (!row) return;
+    const contentDiv = row.querySelector('.message-content');
+    if (!contentDiv) return;
+    
+    const formatted = parseMessageText(content);
+    contentDiv.innerHTML = `${formatted}<span class="streaming-cursor"></span>`;
+    scrollToBottom();
+}
+
+function finalizeStreamingMessage(id, content, sources = []) {
+    const row = document.getElementById(id);
+    if (!row) return;
+    
+    const bubble = row.querySelector('.message-bubble');
+    if (bubble) {
+        bubble.classList.remove('streaming');
+    }
+    
+    const contentDiv = row.querySelector('.message-content');
+    if (contentDiv) {
+        const formatted = parseMessageText(content);
+        contentDiv.innerHTML = formatted;
+    }
+    
+    if (sources && sources.length > 0 && bubble) {
+        const sourcesSection = document.createElement('div');
+        sourcesSection.className = 'sources-toggle';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'btn-sources';
+        toggleBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+            <span>View Source Passages (${sources.length})</span>
+        `;
+
+        const sourcesContainer = document.createElement('div');
+        sourcesContainer.className = 'sources-container';
+        sourcesContainer.style.display = 'none';
+
+        sources.forEach(src => {
+            const card = document.createElement('div');
+            card.className = 'source-card';
+            card.innerHTML = `
+                <div class="source-card-header">
+                    <span class="source-title" title="${escapeHTML(src.source)}">${escapeHTML(src.source)}</span>
+                    <span class="source-score">${Math.round(src.score)}% match</span>
+                </div>
+                <div class="source-content">${escapeHTML(src.content)}</div>
+            `;
+            sourcesContainer.appendChild(card);
+        });
+
+        toggleBtn.addEventListener('click', () => {
+            const isClosed = sourcesContainer.style.display === 'none';
+            sourcesContainer.style.display = isClosed ? 'flex' : 'none';
+            toggleBtn.className = `btn-sources ${isClosed ? 'open' : ''}`;
+        });
+
+        sourcesSection.appendChild(toggleBtn);
+        sourcesSection.appendChild(sourcesContainer);
+        bubble.appendChild(sourcesSection);
+    }
+    
+    if (bubble) {
+        const meta = document.createElement('div');
+        meta.className = 'message-meta';
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        meta.innerHTML = `
+            <span>Assistant</span>
+            <span>•</span>
+            <span>${timeStr}</span>
+        `;
+        bubble.appendChild(meta);
+    }
+    scrollToBottom();
 }
 
 function escapeHTML(str) {

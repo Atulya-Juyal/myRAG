@@ -16,10 +16,11 @@ import time
 import os
 import asyncio
 import uuid
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, UploadFile, File
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -144,7 +145,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Production LangGraph API",
     description="A production-ready chat API with security, caching, and observability.",
-    version="1.1.4",
+    version="1.1.5",
     lifespan=lifespan,
 )
 app.state.limiter = limiter
@@ -292,6 +293,92 @@ async def chat(request: Request, body: ChatRequest):
             processing_time_ms=round(timer.elapsed_ms, 2),
             sources=result.get("sources", []),
         )
+
+
+@app.post("/chat/stream")
+@limiter.limit(get_settings().rate_limit)
+async def chat_stream(request: Request, body: ChatRequest):
+    """
+    Additive real-time token streaming endpoint via SSE (Server-Sent Events).
+    """
+    # ---- Step 1: Security Check ----
+    is_allowed, cleaned_message, notes = security.check_input(body.message)
+    if not is_allowed:
+        logger.warning("Request blocked by security (stream)", extra={"extra_data": {
+            "reason": notes,
+            "thread_id": body.thread_id,
+        }})
+        metrics.record_request(latency_ms=0, error=True)
+        raise HTTPException(
+            status_code=400,
+            detail="Your message was blocked by our security filters."
+        )
+
+    # ---- Step 2: Cache Lookup ----
+    cached_response = cache.get(cleaned_message)
+    if cached_response is not None:
+        metrics.record_request(latency_ms=0, cache_hit=True)
+        logger.info("Cache hit (stream)", extra={"extra_data": {
+            "thread_id": body.thread_id,
+        }})
+        # Save to history
+        try:
+            rag_manager.add_message_to_history(body.chat_id, "user", cleaned_message)
+            rag_manager.add_message_to_history(body.chat_id, "bot", cached_response, sources=[])
+        except Exception as e:
+            logger.error(f"Failed to save cache hit to history: {e}")
+
+        async def cache_generator():
+            yield f"data: {json.dumps({'type': 'token', 'content': cached_response})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'sources': [], 'model_used': 'cache'})}\n\n"
+
+        return StreamingResponse(cache_generator(), media_type="text/event-stream")
+
+    # ---- Step 3: Stream from Agent ----
+    async def event_generator():
+        full_response = ""
+        model_used = "primary"
+        sources = []
+        has_error = False
+        
+        try:
+            async for token, model, src in agent.stream(cleaned_message, chat_id=body.chat_id):
+                if token:
+                    full_response += token
+                    model_used = model
+                    sources = src
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                    # Small sleep to smooth stream chunks
+                    await asyncio.sleep(0.005)
+        except Exception as e:
+            logger.error(f"Streaming failed: {e}")
+            yield f"data: {json.dumps({'type': 'token', 'content': 'Error occurred during streaming.'})}\n\n"
+            has_error = True
+            model_used = "error_handler"
+
+        if not has_error:
+            # ---- Step 4: Output Validation ----
+            validated_response, output_warnings = security.check_output(full_response)
+            
+            # ---- Step 5: Cache Store ----
+            cache.set(cleaned_message, validated_response)
+            
+            # ---- Step 6: Save to History ----
+            try:
+                rag_manager.add_message_to_history(body.chat_id, "user", cleaned_message)
+                rag_manager.add_message_to_history(
+                    body.chat_id,
+                    "bot",
+                    validated_response,
+                    sources=sources
+                )
+            except Exception as e:
+                logger.error(f"Failed to save streamed message to history: {e}")
+
+        # ---- Step 7: Emit done metadata event ----
+        yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'model_used': model_used})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 

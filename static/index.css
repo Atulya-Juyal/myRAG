@@ -1006,3 +1006,130 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(15, 23, 42, 0.18);
 }
+
+/* ----------------------------------------------------
+   MARKDOWN & STREAMING TYPOGRAPHY SCALES
+   ---------------------------------------------------- */
+.code-block-wrapper {
+    background: #0f172a;
+    border-radius: var(--radius-md);
+    margin: 12px 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+}
+
+.code-block-header {
+    background: #1e293b;
+    padding: 8px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.code-block-lang {
+    color: #94a3b8;
+    font-size: 0.75rem;
+    font-family: monospace;
+    text-transform: uppercase;
+}
+
+.btn-copy-code {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.btn-copy-code:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+
+.message-content pre {
+    margin: 0;
+    padding: 16px;
+    overflow-x: auto;
+}
+
+.message-content pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: #e2e8f0;
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.message-content code.inline-code {
+    background: rgba(15, 23, 42, 0.06);
+    color: #0f172a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.message-content p {
+    margin: 0 0 10px 0;
+    line-height: 1.5;
+}
+
+.message-content p:last-child {
+    margin-bottom: 0;
+}
+
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4 {
+    color: var(--color-text-main);
+    font-family: var(--font-secondary);
+    margin: 16px 0 8px 0;
+    font-weight: 600;
+}
+
+.message-content h1 { font-size: 1.35rem; }
+.message-content h2 { font-size: 1.2rem; }
+.message-content h3 { font-size: 1.05rem; }
+.message-content h4 { font-size: 0.95rem; }
+
+.message-content ul,
+.message-content ol {
+    margin: 0 0 10px 20px;
+    padding: 0;
+}
+
+.message-content li {
+    margin-bottom: 6px;
+    line-height: 1.5;
+}
+
+.message-content hr {
+    border: none;
+    border-top: 1px solid var(--color-border-glass);
+    margin: 16px 0;
+}
+
+.streaming-cursor {
+    display: inline-block;
+    width: 6px;
+    height: 15px;
+    background-color: var(--color-accent);
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: cursorBlink 0.8s infinite;
+}
+
+@keyframes cursorBlink {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 1; }
+}

@@ -56,6 +56,11 @@ def mock_dependencies():
     mock_agent_response = AIMessage(content="This is a grounded answer from the bot.")
     mock_llm.invoke.return_value = mock_agent_response
     
+    async def mock_astream(*args, **kwargs):
+        yield AIMessage(content="Token1 ")
+        yield AIMessage(content="Token2")
+    mock_llm.astream = mock_astream
+    
     with patch("app.main.get_settings", return_value=mock_settings), \
          patch("app.config.Settings", return_value=mock_settings), \
          patch("app.rag.get_settings", return_value=mock_settings), \
@@ -151,3 +156,27 @@ def test_chat_interaction_endpoint(mock_dependencies):
         assert res["response"] == "This is a grounded answer from the bot."
         assert res["thread_id"] == "thread_123"
         assert "sources" in res
+
+
+def test_chat_stream_endpoint(mock_dependencies):
+    from app.main import app
+    
+    with TestClient(app) as client:
+        # Send a chat message to the streaming endpoint
+        response = client.post(
+            "/chat/stream",
+            json={"message": "What is this project?", "thread_id": "thread_123", "chat_id": "default"}
+        )
+        assert response.status_code == 200
+        
+        # Parse the SSE stream lines
+        sse_lines = [line for line in response.iter_lines() if line]
+        
+        # Verify the format and contents of the yielded events
+        assert len(sse_lines) >= 3
+        # First sse line should be token 1
+        assert '{"type": "token", "content": "Token1 "}' in sse_lines[0]
+        # Second sse line should be token 2
+        assert '{"type": "token", "content": "Token2"}' in sse_lines[1]
+        # Last sse line should be done metadata
+        assert '"type": "done"' in sse_lines[-1]

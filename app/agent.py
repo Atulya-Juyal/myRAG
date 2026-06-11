@@ -254,4 +254,57 @@ class ProductionAgent:
             "model_used": result.get("model_used", "unknown"),
             "error": result.get("error"),
             "sources": result.get("context", []),
-        }
+        }
+
+    @traceable(name="production_agent_stream")
+    async def stream(self, message: str, chat_id: str = "default"):
+        """
+        Stream the agent response with a user message.
+        Yields tuple: (token_content: str, model_used: str, sources: list[dict])
+        """
+        from langchain_core.messages import SystemMessage
+        
+        # Load history
+        history = self.rag_manager.load_history(chat_id)
+        
+        # Build messages list starting with history
+        messages = []
+        for msg in history:
+            if msg.get("sender") == "user":
+                messages.append(HumanMessage(content=msg["text"]))
+            elif msg.get("sender") == "bot":
+                messages.append(AIMessage(content=msg["text"]))
+                
+        # Append current message
+        messages.append(HumanMessage(content=message))
+        
+        # Retrieve context
+        chunks = self.rag_manager.retrieve(chat_id, message, k=4)
+        
+        final_messages = list(messages)
+        if chunks:
+            context_text = "\n\n".join([
+                f"Source: {c['source']} (Match Confidence: {c['score']}%)\nContent: {c['content']}"
+                for c in chunks
+            ])
+            system_prompt = (
+                "You are a helpful assistant. Use the following retrieved context to answer the user's question. "
+                "If the context doesn't contain the answer, answer based on your knowledge but indicate that the answer wasn't found in the documents.\n\n"
+                f"Retrieved Context:\n{context_text}"
+            )
+            final_messages.insert(0, SystemMessage(content=system_prompt))
+            
+        # Stream response
+        model_used = "primary"
+        try:
+            async for chunk in self.primary_llm.astream(final_messages):
+                yield chunk.content, model_used, chunks
+        except Exception as e:
+            # Fallback
+            model_used = "fallback"
+            try:
+                async for chunk in self.fallback_llm.astream(final_messages):
+                    yield chunk.content, model_used, chunks
+            except Exception as fe:
+                # Return standard error message in streaming format
+                yield "I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.", "error_handler", []
