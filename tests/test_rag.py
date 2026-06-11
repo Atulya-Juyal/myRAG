@@ -480,4 +480,178 @@ def test_history_persistence_db(mock_embeddings):
                 )
 
 
+def test_pdf_to_markdown_heading_classification():
+    from app.document_processor import extract_text_from_pdf
+
+    # Mock character properties for H1, H2, H3, Body, and coordinate-filtered header/footers
+    mock_char_h1 = [
+        {"text": "M", "size": 15.0, "top": 50.0, "x0": 10.0, "x1": 15.0, "fontname": "Arial-Bold"},
+        {"text": "y", "size": 15.0, "top": 50.0, "x0": 15.0, "x1": 20.0, "fontname": "Arial-Bold"},
+        {"text": " ", "size": 15.0, "top": 50.0, "x0": 20.0, "x1": 23.0, "fontname": "Arial-Bold"},
+        {"text": "T", "size": 15.0, "top": 50.0, "x0": 23.0, "x1": 28.0, "fontname": "Arial-Bold"},
+        {"text": "i", "size": 15.0, "top": 50.0, "x0": 28.0, "x1": 31.0, "fontname": "Arial-Bold"},
+        {"text": "t", "size": 15.0, "top": 50.0, "x0": 31.0, "x1": 35.0, "fontname": "Arial-Bold"},
+        {"text": "l", "size": 15.0, "top": 50.0, "x0": 35.0, "x1": 38.0, "fontname": "Arial-Bold"},
+        {"text": "e", "size": 15.0, "top": 50.0, "x0": 38.0, "x1": 43.0, "fontname": "Arial-Bold"},
+    ]
+
+    mock_char_h2 = [
+        {"text": "S", "size": 12.5, "top": 120.0, "x0": 10.0, "x1": 15.0, "fontname": "Arial-Bold"},
+        {"text": "u", "size": 12.5, "top": 120.0, "x0": 15.0, "x1": 20.0, "fontname": "Arial-Bold"},
+        {"text": "b", "size": 12.5, "top": 120.0, "x0": 20.0, "x1": 25.0, "fontname": "Arial-Bold"},
+    ]
+
+    mock_char_h3 = [
+        {"text": "1", "size": 10.8, "top": 200.0, "x0": 10.0, "x1": 15.0, "fontname": "Arial-Bold"},
+        {"text": ".", "size": 10.8, "top": 200.0, "x0": 15.0, "x1": 18.0, "fontname": "Arial-Bold"},
+        {"text": "1", "size": 10.8, "top": 200.0, "x0": 18.0, "x1": 23.0, "fontname": "Arial-Bold"},
+        {"text": " ", "size": 10.8, "top": 200.0, "x0": 23.0, "x1": 26.0, "fontname": "Arial-Bold"},
+        {"text": "S", "size": 10.8, "top": 200.0, "x0": 26.0, "x1": 31.0, "fontname": "Arial-Bold"},
+    ]
+
+    mock_body_chars = []
+    body_text = "This is standard body content in the document."
+    for idx, char in enumerate(body_text):
+        if char.isspace():
+            continue
+        mock_body_chars.append({
+            "text": char,
+            "size": 10.0,
+            "top": 300.0,
+            "x0": 10.0 + idx * 6,
+            "x1": 15.0 + idx * 6,
+            "fontname": "Arial"
+        })
+
+    # Header and footer characters to filter out (coordinates top 5% and bottom 95%)
+    mock_running_header = [
+        {"text": "P", "size": 8.0, "top": 10.0, "x0": 200.0, "x1": 205.0, "fontname": "Arial"},
+        {"text": "a", "size": 8.0, "top": 10.0, "x0": 205.0, "x1": 210.0, "fontname": "Arial"},
+        {"text": "g", "size": 8.0, "top": 10.0, "x0": 210.0, "x1": 215.0, "fontname": "Arial"},
+        {"text": "e", "size": 8.0, "top": 10.0, "x0": 215.0, "x1": 220.0, "fontname": "Arial"},
+        {"text": " ", "size": 8.0, "top": 10.0, "x0": 220.0, "x1": 223.0, "fontname": "Arial"},
+        {"text": "1", "size": 8.0, "top": 10.0, "x0": 223.0, "x1": 228.0, "fontname": "Arial"},
+    ]
+
+    mock_running_footer = [
+        {"text": "C", "size": 8.0, "top": 480.0, "x0": 200.0, "x1": 205.0, "fontname": "Arial"},
+        {"text": "o", "size": 8.0, "top": 480.0, "x0": 205.0, "x1": 210.0, "fontname": "Arial"},
+        {"text": "n", "size": 8.0, "top": 480.0, "x0": 210.0, "x1": 215.0, "fontname": "Arial"},
+        {"text": "f", "size": 8.0, "top": 480.0, "x0": 215.0, "x1": 220.0, "fontname": "Arial"},
+    ]
+
+    mock_page = MagicMock()
+    mock_page.height = 500
+    mock_page.chars = (
+        mock_char_h1 
+        + mock_char_h2 
+        + mock_char_h3 
+        + mock_body_chars 
+        + mock_running_header 
+        + mock_running_footer
+    )
+    mock_page.extract_text.return_value = "Fallback text should not be used when chars list is populated"
+
+    mock_pdf = MagicMock()
+    mock_pdf.pages = [mock_page]
+
+    mock_open = MagicMock()
+    mock_open.__enter__.return_value = mock_pdf
+
+    with patch("pdfplumber.open", return_value=mock_open):
+        pages = extract_text_from_pdf(b"dummy pdf bytes")
+
+    assert len(pages) == 1
+    page_num, page_md = pages[0]
+    assert page_num == 1
+    
+    # Assert header H1 is correctly classified and formatted
+    assert "# My Title" in page_md
+    
+    # Assert header H2 is correctly classified and formatted (size 12.5 >= 1.2 * body_font_size 10.0)
+    assert "## Sub" in page_md
+    
+    # Assert header H3 is correctly classified and formatted (size 10.8 > 1.05 * body_font_size, bold fontname)
+    assert "### 1.1 Section" in page_md or "### 1.1 S" in page_md
+    
+    # Assert standard body text is present without header markdown prefixes
+    assert "This is standard body content in the document." in page_md
+    
+    # Assert that header (top 5%) and footer (bottom 95%) content were excluded from parsing
+    assert "Page 1" not in page_md
+    assert "Conf" not in page_md
+
+
+def test_markdown_chunking_and_breadcrumbs():
+    from app.document_processor import DocumentProcessor
+    processor = DocumentProcessor()
+
+    pages = [
+        (1, "# Main Section\nIntroduction content goes here.\n\n## Sub Section\nDetailed sub-section content.")
+    ]
+
+    docs = processor.create_child_parent_pairs(pages, "test_doc.pdf", "chat_test", "doc_test")
+
+    assert len(docs) > 0
+    
+    # Ensure correct source prefixing and parent-child association
+    doc0 = docs[0]
+    assert "Main Section" in doc0.page_content
+    assert "test_doc.pdf" in doc0.page_content
+    assert doc0.metadata["doc_id"] == "doc_test"
+    assert doc0.metadata["chat_id"] == "chat_test"
+    assert doc0.metadata["source"] == "test_doc.pdf"
+    assert doc0.metadata["Header 1"] == "Main Section"
+
+    # Find the sub-section chunk and verify breadcrumbs/hierarchy is present
+    sub_docs = [d for d in docs if "Detailed sub-section content" in d.page_content]
+    assert len(sub_docs) > 0
+    sub_doc = sub_docs[0]
+    assert "[Context: Main Section > Sub Section]" in sub_doc.page_content
+    assert sub_doc.metadata["Header 1"] == "Main Section"
+    assert sub_doc.metadata["Header 2"] == "Sub Section"
+
+
+def test_document_processing_fallback_unstructured():
+    from app.document_processor import DocumentProcessor
+    processor = DocumentProcessor()
+
+    # Plain text without any markdown headers should use standard text splitting
+    pages = [
+        (1, "This is unstructured text. It does not contain any headers that start with a hash symbol. It should fall back to character-based parent-child splitting.")
+    ]
+
+    docs = processor.create_child_parent_pairs(pages, "plain_doc.txt", "chat_test", "doc_test")
+    assert len(docs) > 0
+    
+    # Verify prefix and no header metadata is generated
+    assert "Context: " in docs[0].page_content
+    assert "[Context:" not in docs[0].page_content
+    assert "Header 1" not in docs[0].metadata
+
+
+def test_markdown_oversized_parent_subsplitting():
+    from app.document_processor import DocumentProcessor
+    processor = DocumentProcessor()
+
+    # Create a long section text that is > 2000 characters (e.g. 3000 characters)
+    long_section = "This is a sentence that will be repeated to construct a very long section.\n\n" * 40
+    pages = [
+        (1, f"# Giant Section\n{long_section}")
+    ]
+
+    docs = processor.create_child_parent_pairs(pages, "giant.pdf", "chat_test", "doc_test")
+
+    assert len(docs) > 0
+    
+    # Verify every document parent chunk size is capped and keeps header breadcrumb context
+    for doc in docs:
+        parent_len = len(doc.metadata["parent_content"])
+        assert parent_len <= 2000
+        assert doc.metadata["Header 1"] == "Giant Section"
+        assert "[Context: Giant Section]" in doc.page_content
+
+
+
+
 
