@@ -271,7 +271,7 @@ class RAGManager:
                                 continue
                             seen_parents.add(parent_key)
                             
-                            confidence = max(0.0, 1.0 - (distance / 2.0))
+                            confidence = max(0.0, min(1.0, 1.0 - distance))
                             match_percentage = round(confidence * 100)
                             
                             retrieved.append({
@@ -310,7 +310,7 @@ class RAGManager:
                     continue
                 seen_parents.add(parent_key)
                 
-                confidence = max(0.0, 1.0 - (score / 2.0))
+                confidence = max(0.0, min(1.0, score))
                 match_percentage = round(confidence * 100)
                 
                 retrieved.append({

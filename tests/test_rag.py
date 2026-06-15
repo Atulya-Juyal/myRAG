@@ -170,6 +170,7 @@ def test_vector_search_and_isolation(mock_embeddings):
             assert len(results) == 1
             assert "FastAPI is a modern web framework" in results[0]["content"]
             assert results[0]["source"] == "doc.txt"
+            assert results[0]["score"] == 100
             
             # 2. Verify workspace isolation: search in workspace_2 must be empty
             results_empty = manager.retrieve("workspace_2", "Tell me about FastAPI", k=1)
@@ -396,12 +397,12 @@ def test_db_retrieval(mock_embeddings):
                 assert results[0]["content"] == "FastAPI is a modern web framework."
                 assert results[0]["source"] == "fastapi.txt"
                 assert results[0]["pages"] == [1]
-                assert results[0]["score"] == 90
+                assert results[0]["score"] == 80
                 
                 assert results[1]["content"] == "LangGraph is for stateful agents."
                 assert results[1]["source"] == "langgraph.txt"
                 assert results[1]["pages"] == [2, 3]
-                assert results[1]["score"] == 75
+                assert results[1]["score"] == 50
 
 
 def test_history_persistence_file(mock_embeddings):
