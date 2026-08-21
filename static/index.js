@@ -68,10 +68,13 @@ function toggleLeftSidebar() {
     }
 }
 
+function isMobileView() {
+    return window.matchMedia('(max-width: 1280px), (orientation: portrait)').matches;
+}
+
 function toggleRightSidebar() {
     if (!dom.docSidebar) return;
-    const isMobile = window.innerWidth <= 860;
-    if (isMobile) {
+    if (isMobileView()) {
         const isOpen = dom.docSidebar.classList.toggle('open');
         if (dom.leftSidebar) dom.leftSidebar.classList.remove('open');
         if (dom.sidebarBackdrop) {
