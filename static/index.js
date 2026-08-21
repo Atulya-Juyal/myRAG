@@ -69,7 +69,7 @@ function toggleLeftSidebar() {
 }
 
 function isMobileView() {
-    return window.matchMedia('(max-width: 1280px), (orientation: portrait)').matches;
+    return window.matchMedia('(max-width: 1920px), (orientation: portrait), (pointer: coarse), (hover: none)').matches;
 }
 
 function toggleRightSidebar() {
