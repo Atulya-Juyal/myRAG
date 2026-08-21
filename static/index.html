@@ -31,7 +31,14 @@
                     </svg>
                     <span>myRAG</span>
                 </div>
-                <span class="badge">v1.1</span>
+                <div class="sidebar-header-right">
+                    <span class="badge">v1.1</span>
+                    <button id="btn-close-left-sidebar" class="btn-close-sidebar mobile-only-btn" title="Close Menu">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
             </div>
 
             <div class="sidebar-action">
@@ -61,9 +68,16 @@
         <!-- MAIN AREA: Chat Interface -->
         <main class="chat-area">
             <header class="chat-header">
-                <div class="header-info">
-                    <h1 id="active-chat-title">Project Assistant</h1>
-                    <p id="active-chat-subtitle" class="subtitle">Default workspace for general queries</p>
+                <div class="header-left">
+                    <button id="btn-toggle-workspaces" class="btn btn-secondary btn-icon-only mobile-toggle-btn" title="Toggle Workspaces">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                        </svg>
+                    </button>
+                    <div class="header-info">
+                        <h1 id="active-chat-title">Project Assistant</h1>
+                        <p id="active-chat-subtitle" class="subtitle">Default workspace for general queries</p>
+                    </div>
                 </div>
                 <div class="header-actions">
                     <button id="btn-toggle-docs" class="btn btn-secondary btn-icon-only" title="Toggle Document Panel">
@@ -110,6 +124,11 @@
 
                     <h2>Document Index</h2>
                 </div>
+                <button id="btn-close-right-sidebar" class="btn-close-sidebar mobile-only-btn" title="Close Document Panel">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
 
             <!-- Drag & Drop Zone -->
@@ -141,6 +160,9 @@
 
 
         </aside>
+
+        <!-- Mobile Sidebar Backdrop Overlay -->
+        <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
     </div>
 
     <!-- Modals (Workspace creation dialog) -->

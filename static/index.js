@@ -27,7 +27,12 @@ const dom = {
     documentList: document.getElementById('document-list'),
     btnNewChat: document.getElementById('btn-new-chat'),
     btnToggleDocs: document.getElementById('btn-toggle-docs'),
+    btnToggleWorkspaces: document.getElementById('btn-toggle-workspaces'),
+    leftSidebar: document.querySelector('.left-sidebar'),
     docSidebar: document.getElementById('doc-sidebar'),
+    sidebarBackdrop: document.getElementById('sidebar-backdrop'),
+    btnCloseLeftSidebar: document.getElementById('btn-close-left-sidebar'),
+    btnCloseRightSidebar: document.getElementById('btn-close-right-sidebar'),
     uploadZone: document.getElementById('upload-zone'),
     fileInput: document.getElementById('file-input'),
     statusIndicator: document.getElementById('status-indicator'),
@@ -47,7 +52,55 @@ document.addEventListener('DOMContentLoaded', () => {
     startHealthCheck();
 });
 
+function closeMobileSidebars() {
+    if (dom.leftSidebar) dom.leftSidebar.classList.remove('open');
+    if (dom.docSidebar) dom.docSidebar.classList.remove('open');
+    if (dom.sidebarBackdrop) dom.sidebarBackdrop.classList.remove('active');
+}
+
+function toggleLeftSidebar() {
+    if (!dom.leftSidebar) return;
+    const isOpen = dom.leftSidebar.classList.toggle('open');
+    if (dom.docSidebar) dom.docSidebar.classList.remove('open');
+    if (dom.sidebarBackdrop) {
+        if (isOpen) dom.sidebarBackdrop.classList.add('active');
+        else dom.sidebarBackdrop.classList.remove('active');
+    }
+}
+
+function toggleRightSidebar() {
+    if (!dom.docSidebar) return;
+    const isMobile = window.innerWidth <= 860;
+    if (isMobile) {
+        const isOpen = dom.docSidebar.classList.toggle('open');
+        if (dom.leftSidebar) dom.leftSidebar.classList.remove('open');
+        if (dom.sidebarBackdrop) {
+            if (isOpen) dom.sidebarBackdrop.classList.add('active');
+            else dom.sidebarBackdrop.classList.remove('active');
+        }
+    } else {
+        dom.docSidebar.classList.toggle('collapsed');
+    }
+}
+
 function setupEventListeners() {
+    // Mobile Drawer Triggers
+    if (dom.btnToggleWorkspaces) {
+        dom.btnToggleWorkspaces.addEventListener('click', toggleLeftSidebar);
+    }
+    if (dom.btnCloseLeftSidebar) {
+        dom.btnCloseLeftSidebar.addEventListener('click', closeMobileSidebars);
+    }
+    if (dom.btnCloseRightSidebar) {
+        dom.btnCloseRightSidebar.addEventListener('click', closeMobileSidebars);
+    }
+    if (dom.sidebarBackdrop) {
+        dom.sidebarBackdrop.addEventListener('click', closeMobileSidebars);
+    }
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMobileSidebars();
+    });
+
     // Modal Workspace Trigger
     dom.btnNewChat.addEventListener('click', () => {
         dom.modalInput.value = '';
@@ -85,10 +138,10 @@ function setupEventListeners() {
         dom.chatInput.style.height = (dom.chatInput.scrollHeight) + 'px';
     });
 
-    // Toggle Collapsible Right Sidebar
-    dom.btnToggleDocs.addEventListener('click', () => {
-        dom.docSidebar.classList.toggle('collapsed');
-    });
+    // Toggle Right Sidebar (Desktop collapse or Mobile drawer)
+    if (dom.btnToggleDocs) {
+        dom.btnToggleDocs.addEventListener('click', toggleRightSidebar);
+    }
 
     // Ingest Drag and Drop Setup
     dom.uploadZone.addEventListener('click', () => dom.fileInput.click());
@@ -280,6 +333,7 @@ async function fetchChatHistory(chatId) {
 
 function selectWorkspace(chatId) {
     state.activeWorkspaceId = chatId;
+    closeMobileSidebars();
     
     // Clear document polling timer
     if (state.pollingTimer) {

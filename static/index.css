@@ -45,14 +45,23 @@
     padding: 0;
 }
 
+html, body {
+    height: 100%;
+    height: 100dvh;
+    width: 100%;
+    width: 100dvw;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
 body {
     font-family: var(--font-primary);
     background: linear-gradient(135deg, var(--color-bg-start) 0%, var(--color-bg-end) 100%);
     color: var(--color-text-main);
-    min-height: 100vh;
-    height: 100vh;
-    overflow: hidden;
-    position: relative;
 }
 
 /* ----------------------------------------------------
@@ -98,8 +107,11 @@ body {
 .app-container {
     display: flex;
     position: relative;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
     z-index: 1;
 }
 
@@ -398,6 +410,9 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
     z-index: 1;
     position: relative;
 }
@@ -411,6 +426,7 @@ body {
     background: rgba(255, 255, 255, 0.4);
     border-bottom: 1px solid var(--color-border-glass);
     backdrop-filter: blur(8px);
+    flex-shrink: 0;
 }
 
 .chat-header h1 {
@@ -430,7 +446,9 @@ body {
    ---------------------------------------------------- */
 .chat-messages {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 32px;
     display: flex;
     flex-direction: column;
@@ -628,6 +646,7 @@ body {
 .chat-input-container {
     padding: 0 32px 32px 32px;
     background: transparent;
+    flex-shrink: 0;
 }
 
 .chat-input-box {
@@ -1132,4 +1151,275 @@ body {
 @keyframes cursorBlink {
     0%, 100% { opacity: 0; }
     50% { opacity: 1; }
+}
+
+/* ----------------------------------------------------
+   MOBILE & RESPONSIVE DESIGN SYSTEM
+   ---------------------------------------------------- */
+
+/* Sidebar Backdrop Overlay */
+.sidebar-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 90;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Mobile Toggle & Close Buttons */
+.mobile-toggle-btn {
+    display: none;
+}
+
+.sidebar-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-close-sidebar {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.btn-close-sidebar:hover {
+    background: rgba(15, 23, 42, 0.08);
+    color: var(--color-text-main);
+}
+
+.btn-close-sidebar svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Header layout structure */
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+/* ----------------------------------------------------
+   TABLET & MOBILE MEDIA QUERIES (max-width: 860px)
+   ---------------------------------------------------- */
+@media (max-width: 860px) {
+    .mobile-toggle-btn {
+        display: inline-flex !important;
+        flex-shrink: 0;
+    }
+
+    .btn-close-sidebar {
+        display: inline-flex !important;
+    }
+
+    /* Off-canvas Left Sidebar */
+    .left-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 85vw;
+        max-width: 320px;
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
+        background: rgba(255, 255, 255, 0.95);
+    }
+
+    .left-sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Off-canvas Right Sidebar */
+    .right-sidebar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 85vw;
+        max-width: 340px;
+        z-index: 100;
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
+        background: rgba(15, 23, 42, 0.05);
+        background: rgba(255, 255, 255, 0.95);
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+
+    .right-sidebar.collapsed {
+        width: 85vw;
+    }
+
+    .right-sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Chat Area Layout */
+    .chat-area {
+        width: 100%;
+        width: 100dvw;
+        height: 100%;
+        max-height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .chat-header {
+        padding: 0 16px;
+        height: 68px;
+    }
+
+    .chat-header h1 {
+        font-size: 1.05rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .chat-header .subtitle {
+        font-size: 0.7rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .chat-messages {
+        padding: 20px 14px;
+        gap: 16px;
+    }
+
+    .welcome-message-card {
+        padding: 24px 16px;
+        max-width: 100%;
+    }
+
+    .message-bubble {
+        max-width: 88%;
+        padding: 12px 14px;
+        font-size: 0.88rem;
+    }
+
+    .chat-input-container {
+        padding: 0 14px 14px 14px;
+        padding-bottom: max(14px, env(safe-area-inset-bottom));
+    }
+
+    .chat-input-box {
+        padding: 10px 12px;
+        gap: 8px;
+    }
+
+    .btn-send {
+        width: 40px;
+        height: 40px;
+    }
+
+    .chat-input-footer {
+        padding: 0 4px;
+        font-size: 0.65rem;
+    }
+
+    .engine-tip {
+        display: none;
+    }
+
+    /* Document upload zone & cards on mobile */
+    .upload-zone {
+        margin: 0 16px 16px 16px;
+        padding: 18px 12px;
+    }
+
+    .documents-section {
+        padding: 0 16px;
+    }
+
+    .info-card {
+        margin: 16px;
+    }
+}
+
+/* ----------------------------------------------------
+   SMALL SMARTPHONE MEDIA QUERIES (max-width: 480px)
+   ---------------------------------------------------- */
+@media (max-width: 480px) {
+    .chat-header {
+        padding: 0 12px;
+        height: 62px;
+    }
+
+    .chat-header h1 {
+        font-size: 0.98rem;
+        max-width: 150px;
+    }
+
+    .chat-header .subtitle {
+        display: none;
+    }
+
+    .chat-messages {
+        padding: 14px 10px;
+        gap: 12px;
+    }
+
+    .message-bubble {
+        max-width: 92%;
+        padding: 10px 12px;
+        font-size: 0.85rem;
+    }
+
+    .message-meta {
+        font-size: 0.62rem;
+    }
+
+    .source-card {
+        padding: 8px;
+    }
+
+    .source-content {
+        font-size: 0.7rem;
+    }
+
+    .modal-card {
+        padding: 20px 16px;
+        width: 94%;
+    }
+
+    .modal-card h3 {
+        font-size: 1.05rem;
+    }
+
+    .modal-card p {
+        font-size: 0.75rem;
+    }
+
+    .form-group input {
+        padding: 10px;
+        font-size: 0.8rem;
+    }
 }
